@@ -137,3 +137,90 @@ export function verifyCandyclawHmac(
 
   return { ok: true, reason: "ok" };
 }
+
+/** Default grace period for key rotation (60 seconds). */
+export const DEFAULT_ROTATION_GRACE_MS = 60_000;
+
+/**
+ * Manages HMAC key rotation with a grace period.
+ *
+ * During rotation, both the old and new keys are accepted for verification.
+ * After the grace period expires, only the new key is valid.
+ */
+export class HmacKeyRotation {
+  private pendingKeyBase64: string | undefined;
+  private pendingExpiresAtMs = 0;
+
+  /** Start a key rotation. Returns the new key to acknowledge. */
+  startRotation(newKeyBase64: string, gracePeriodMs = DEFAULT_ROTATION_GRACE_MS): void {
+    this.pendingKeyBase64 = newKeyBase64;
+    this.pendingExpiresAtMs = Date.now() + gracePeriodMs;
+  }
+
+  /**
+   * Returns the list of keys to try for verification.
+   * During grace period: [currentKey, pendingKey].
+   * After grace period: the pending key becomes the current key.
+   */
+  getActiveKeys(currentKeyBase64: string): string[] {
+    if (!this.pendingKeyBase64) {
+      return [currentKeyBase64];
+    }
+
+    if (Date.now() >= this.pendingExpiresAtMs) {
+      // Grace period expired — pending key is now the only valid key.
+      const rotated = this.pendingKeyBase64;
+      this.pendingKeyBase64 = undefined;
+      return [rotated];
+    }
+
+    // During grace period: try both keys.
+    return [currentKeyBase64, this.pendingKeyBase64];
+  }
+
+  /** Returns the rotated key if grace period has expired, otherwise undefined. */
+  getRotatedKey(): string | undefined {
+    if (this.pendingKeyBase64 && Date.now() >= this.pendingExpiresAtMs) {
+      const key = this.pendingKeyBase64;
+      this.pendingKeyBase64 = undefined;
+      return key;
+    }
+    return undefined;
+  }
+
+  /** Whether a rotation is currently in progress. */
+  get isRotating(): boolean {
+    return this.pendingKeyBase64 !== undefined;
+  }
+}
+
+/** Singleton key rotation manager for the gateway process. */
+export const globalKeyRotation = new HmacKeyRotation();
+
+/**
+ * Verify an HMAC signature trying multiple keys (for rotation support).
+ *
+ * Tries each key in order and returns the first successful result.
+ */
+export function verifyCandyclawHmacMultiKey(
+  input: Omit<CandyclawHmacInput, "sharedKeyBase64">,
+  keys: string[],
+  nonceTracker: NonceTracker = globalNonceTracker,
+  timestampWindowMs: number = DEFAULT_TIMESTAMP_WINDOW_MS,
+): CandyclawHmacResult {
+  let lastResult: CandyclawHmacResult = { ok: false, reason: "signature_mismatch" };
+
+  for (const key of keys) {
+    const result = verifyCandyclawHmac(
+      { ...input, sharedKeyBase64: key },
+      nonceTracker,
+      timestampWindowMs,
+    );
+    if (result.ok) {
+      return result;
+    }
+    lastResult = result;
+  }
+
+  return lastResult;
+}

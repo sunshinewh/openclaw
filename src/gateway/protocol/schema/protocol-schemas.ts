@@ -101,6 +101,7 @@ import {
   TickEventSchema,
 } from "./frames.js";
 import {
+  CandyclawRotateHmacKeyParamsSchema,
   ChatAbortParamsSchema,
   ChatEventSchema,
   ChatHistoryParamsSchema,
@@ -268,6 +269,7 @@ export const ProtocolSchemas: Record<string, TSchema> = {
   ChatSendParams: ChatSendParamsSchema,
   ChatAbortParams: ChatAbortParamsSchema,
   ChatInjectParams: ChatInjectParamsSchema,
+  CandyclawRotateHmacKeyParams: CandyclawRotateHmacKeyParamsSchema,
   ChatEvent: ChatEventSchema,
   UpdateRunParams: UpdateRunParamsSchema,
   TickEvent: TickEventSchema,

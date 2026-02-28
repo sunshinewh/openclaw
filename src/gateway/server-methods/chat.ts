@@ -15,7 +15,7 @@ import {
   stripInlineDirectiveTagsFromMessageForDisplay,
 } from "../../utils/directive-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { verifyCandyclawHmac } from "../candyclaw-hmac.js";
+import { globalKeyRotation, verifyCandyclawHmacMultiKey } from "../candyclaw-hmac.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -31,6 +31,7 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateCandyclawRotateHmacKeyParams,
   validateChatAbortParams,
   validateChatHistoryParams,
   validateChatInjectParams,
@@ -747,14 +748,15 @@ export const chatHandlers: GatewayRequestHandlers = {
     const hmacKeyBase64 = cfg.gateway?.auth?.candyclawHmacKey;
     const timestampWindowMs = cfg.gateway?.auth?.candyclawTimestampWindowMs;
     if (hmacKeyBase64 && p.candyclawSecure) {
-      const hmacResult = verifyCandyclawHmac(
+      const keys = globalKeyRotation.getActiveKeys(hmacKeyBase64);
+      const hmacResult = verifyCandyclawHmacMultiKey(
         {
           timestamp: p.candyclawTs,
           nonce: p.candyclawNonce,
           signature: p.candyclawSig,
           messageBody: p.message,
-          sharedKeyBase64: hmacKeyBase64,
         },
+        keys,
         undefined,
         timestampWindowMs,
       );
@@ -1075,5 +1077,36 @@ export const chatHandlers: GatewayRequestHandlers = {
     context.nodeSendToSession(rawSessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId: appended.messageId });
+  },
+  "candyclaw.rotateHmacKey": ({ params, respond, context }) => {
+    if (!validateCandyclawRotateHmacKeyParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid candyclaw.rotateHmacKey params: ${formatValidationErrors(validateCandyclawRotateHmacKeyParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const { newKeyBase64 } = params as { newKeyBase64: string };
+
+    // Validate the key is valid base64 and reasonable length (32 bytes = 44 chars base64).
+    let keyBytes: Buffer;
+    try {
+      keyBytes = Buffer.from(newKeyBase64, "base64");
+    } catch {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid base64 key"));
+      return;
+    }
+    if (keyBytes.length < 16 || keyBytes.length > 64) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "key must be 16–64 bytes"));
+      return;
+    }
+
+    globalKeyRotation.startRotation(newKeyBase64);
+    context.logGateway.info("CandyClaw HMAC key rotation started (60s grace period)");
+    respond(true, { ok: true });
   },
 };

@@ -2,8 +2,10 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMESTAMP_WINDOW_MS,
+  HmacKeyRotation,
   NonceTracker,
   verifyCandyclawHmac,
+  verifyCandyclawHmacMultiKey,
 } from "./candyclaw-hmac.js";
 
 // Test key: 32 random bytes base64-encoded.
@@ -410,5 +412,171 @@ describe("configurable timestamp window", () => {
 
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("timestamp_stale");
+  });
+});
+
+// Second test key for rotation tests.
+const TEST_KEY_2_BASE64 = Buffer.from(
+  "fedcba9876543210fedcba9876543210", // 32 bytes
+).toString("base64");
+
+describe("HmacKeyRotation", () => {
+  it("returns only current key when no rotation is active", () => {
+    const rotation = new HmacKeyRotation();
+    const keys = rotation.getActiveKeys(TEST_KEY_BASE64);
+    expect(keys).toEqual([TEST_KEY_BASE64]);
+  });
+
+  it("returns both keys during grace period", () => {
+    const rotation = new HmacKeyRotation();
+    rotation.startRotation(TEST_KEY_2_BASE64, 60_000);
+    const keys = rotation.getActiveKeys(TEST_KEY_BASE64);
+    expect(keys).toEqual([TEST_KEY_BASE64, TEST_KEY_2_BASE64]);
+  });
+
+  it("returns only new key after grace period expires", () => {
+    const rotation = new HmacKeyRotation();
+    // Use a 0ms grace period so it expires immediately.
+    rotation.startRotation(TEST_KEY_2_BASE64, 0);
+    const keys = rotation.getActiveKeys(TEST_KEY_BASE64);
+    expect(keys).toEqual([TEST_KEY_2_BASE64]);
+  });
+
+  it("reports isRotating correctly", () => {
+    const rotation = new HmacKeyRotation();
+    expect(rotation.isRotating).toBe(false);
+
+    rotation.startRotation(TEST_KEY_2_BASE64, 60_000);
+    expect(rotation.isRotating).toBe(true);
+  });
+
+  it("getRotatedKey returns undefined during grace period", () => {
+    const rotation = new HmacKeyRotation();
+    rotation.startRotation(TEST_KEY_2_BASE64, 60_000);
+    expect(rotation.getRotatedKey()).toBeUndefined();
+  });
+
+  it("getRotatedKey returns new key after grace period", () => {
+    const rotation = new HmacKeyRotation();
+    rotation.startRotation(TEST_KEY_2_BASE64, 0);
+    expect(rotation.getRotatedKey()).toBe(TEST_KEY_2_BASE64);
+  });
+
+  it("clears pending state after getRotatedKey consumes it", () => {
+    const rotation = new HmacKeyRotation();
+    rotation.startRotation(TEST_KEY_2_BASE64, 0);
+    rotation.getRotatedKey(); // consume
+    expect(rotation.isRotating).toBe(false);
+    expect(rotation.getRotatedKey()).toBeUndefined();
+  });
+});
+
+describe("verifyCandyclawHmacMultiKey", () => {
+  it("accepts signature signed with first key", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const body = "test";
+    const sig = sign(now, body, TEST_KEY_BASE64);
+
+    const result = verifyCandyclawHmacMultiKey(
+      {
+        timestamp: now,
+        nonce: undefined,
+        signature: sig,
+        messageBody: body,
+      },
+      [TEST_KEY_BASE64, TEST_KEY_2_BASE64],
+      tracker,
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts signature signed with second key", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const body = "test";
+    const sig = sign(now, body, TEST_KEY_2_BASE64);
+
+    const result = verifyCandyclawHmacMultiKey(
+      {
+        timestamp: now,
+        nonce: undefined,
+        signature: sig,
+        messageBody: body,
+      },
+      [TEST_KEY_BASE64, TEST_KEY_2_BASE64],
+      tracker,
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects signature signed with unknown key", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const body = "test";
+    const unknownKey = Buffer.from("abcdefabcdefabcdefabcdefabcdefab").toString("base64");
+    const sig = sign(now, body, unknownKey);
+
+    const result = verifyCandyclawHmacMultiKey(
+      {
+        timestamp: now,
+        nonce: undefined,
+        signature: sig,
+        messageBody: body,
+      },
+      [TEST_KEY_BASE64, TEST_KEY_2_BASE64],
+      tracker,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("signature_mismatch");
+  });
+
+  it("returns non-signature errors from first key attempt", () => {
+    const tracker = new NonceTracker();
+    // Missing timestamp should return missing_headers, not signature_mismatch.
+    const result = verifyCandyclawHmacMultiKey(
+      {
+        timestamp: undefined,
+        nonce: undefined,
+        signature: "abc",
+        messageBody: "test",
+      },
+      [TEST_KEY_BASE64],
+      tracker,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("missing_headers");
+  });
+
+  it("works end-to-end with HmacKeyRotation during grace period", () => {
+    const tracker = new NonceTracker();
+    const rotation = new HmacKeyRotation();
+    rotation.startRotation(TEST_KEY_2_BASE64, 60_000);
+    const keys = rotation.getActiveKeys(TEST_KEY_BASE64);
+
+    const now = Date.now();
+    const body = "during rotation";
+
+    // Message signed with the NEW key should be accepted.
+    const sigNew = sign(now, body, TEST_KEY_2_BASE64);
+    const r1 = verifyCandyclawHmacMultiKey(
+      { timestamp: now, nonce: undefined, signature: sigNew, messageBody: body },
+      keys,
+      tracker,
+    );
+    expect(r1.ok).toBe(true);
+
+    // Message signed with the OLD key should also be accepted.
+    const sigOld = sign(now, body, TEST_KEY_BASE64);
+    const r2 = verifyCandyclawHmacMultiKey(
+      { timestamp: now, nonce: undefined, signature: sigOld, messageBody: body },
+      keys,
+      tracker,
+    );
+    expect(r2.ok).toBe(true);
   });
 });

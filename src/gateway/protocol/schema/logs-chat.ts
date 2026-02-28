@@ -66,6 +66,14 @@ export const ChatInjectParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+// CandyClaw HMAC key rotation
+export const CandyclawRotateHmacKeyParamsSchema = Type.Object(
+  {
+    newKeyBase64: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
 export const ChatEventSchema = Type.Object(
   {
     runId: NonEmptyString,
