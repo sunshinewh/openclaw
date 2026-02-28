@@ -24,8 +24,8 @@ export type CandyclawHmacResult = {
     | "signature_mismatch";
 };
 
-/** Maximum allowed age of a signed message (30 seconds). */
-const TIMESTAMP_WINDOW_MS = 30_000;
+/** Default maximum allowed age of a signed message (30 seconds). */
+export const DEFAULT_TIMESTAMP_WINDOW_MS = 30_000;
 
 /**
  * In-memory nonce tracker for replay protection.
@@ -51,14 +51,14 @@ export class NonceTracker {
     this.seen.set(nonce, timestampMs);
   }
 
-  /** Remove nonces older than 2x the timestamp window. */
-  private maybePrune(): void {
+  /** Remove nonces older than 2x the given timestamp window. */
+  private maybePrune(timestampWindowMs = DEFAULT_TIMESTAMP_WINDOW_MS): void {
     const now = Date.now();
     if (now - this.lastPruneMs < this.pruneIntervalMs) {
       return;
     }
     this.lastPruneMs = now;
-    const cutoff = now - TIMESTAMP_WINDOW_MS * 2;
+    const cutoff = now - timestampWindowMs * 2;
     for (const [nonce, ts] of this.seen) {
       if (ts < cutoff) {
         this.seen.delete(nonce);
@@ -84,6 +84,7 @@ export const globalNonceTracker = new NonceTracker();
 export function verifyCandyclawHmac(
   input: CandyclawHmacInput,
   nonceTracker: NonceTracker = globalNonceTracker,
+  timestampWindowMs: number = DEFAULT_TIMESTAMP_WINDOW_MS,
 ): CandyclawHmacResult {
   const { timestamp, nonce, signature, messageBody, sharedKeyBase64 } = input;
 
@@ -95,7 +96,7 @@ export function verifyCandyclawHmac(
   // Timestamp freshness check.
   const now = Date.now();
   const age = Math.abs(now - timestamp);
-  if (age > TIMESTAMP_WINDOW_MS) {
+  if (age > timestampWindowMs) {
     return { ok: false, reason: "timestamp_stale" };
   }
 

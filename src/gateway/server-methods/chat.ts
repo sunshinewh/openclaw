@@ -745,14 +745,19 @@ export const chatHandlers: GatewayRequestHandlers = {
     // candyclawSecure stays false in agent context.
     let candyclawSecure = false;
     const hmacKeyBase64 = cfg.gateway?.auth?.candyclawHmacKey;
+    const timestampWindowMs = cfg.gateway?.auth?.candyclawTimestampWindowMs;
     if (hmacKeyBase64 && p.candyclawSecure) {
-      const hmacResult = verifyCandyclawHmac({
-        timestamp: p.candyclawTs,
-        nonce: p.candyclawNonce,
-        signature: p.candyclawSig,
-        messageBody: p.message,
-        sharedKeyBase64: hmacKeyBase64,
-      });
+      const hmacResult = verifyCandyclawHmac(
+        {
+          timestamp: p.candyclawTs,
+          nonce: p.candyclawNonce,
+          signature: p.candyclawSig,
+          messageBody: p.message,
+          sharedKeyBase64: hmacKeyBase64,
+        },
+        undefined,
+        timestampWindowMs,
+      );
       if (hmacResult.ok) {
         candyclawSecure = true;
       } else {

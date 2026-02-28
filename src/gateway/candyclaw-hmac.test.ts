@@ -1,6 +1,10 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { NonceTracker, verifyCandyclawHmac } from "./candyclaw-hmac.js";
+import {
+  DEFAULT_TIMESTAMP_WINDOW_MS,
+  NonceTracker,
+  verifyCandyclawHmac,
+} from "./candyclaw-hmac.js";
 
 // Test key: 32 random bytes base64-encoded.
 const TEST_KEY_BASE64 = Buffer.from(
@@ -355,5 +359,56 @@ describe("nonce replay protection", () => {
 
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
+  });
+});
+
+describe("configurable timestamp window", () => {
+  it("exports DEFAULT_TIMESTAMP_WINDOW_MS as 30000", () => {
+    expect(DEFAULT_TIMESTAMP_WINDOW_MS).toBe(30_000);
+  });
+
+  it("accepts stale timestamp within custom wider window", () => {
+    const tracker = new NonceTracker();
+    // 45 seconds old — would fail with default 30s window.
+    const ts = Date.now() - 45_000;
+    const body = "test";
+    const sig = sign(ts, body);
+
+    const result = verifyCandyclawHmac(
+      {
+        timestamp: ts,
+        nonce: undefined,
+        signature: sig,
+        messageBody: body,
+        sharedKeyBase64: TEST_KEY_BASE64,
+      },
+      tracker,
+      60_000, // 60-second window
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects timestamp outside custom narrower window", () => {
+    const tracker = new NonceTracker();
+    // 15 seconds old — would pass with default 30s window.
+    const ts = Date.now() - 15_000;
+    const body = "test";
+    const sig = sign(ts, body);
+
+    const result = verifyCandyclawHmac(
+      {
+        timestamp: ts,
+        nonce: undefined,
+        signature: sig,
+        messageBody: body,
+        sharedKeyBase64: TEST_KEY_BASE64,
+      },
+      tracker,
+      10_000, // 10-second window
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("timestamp_stale");
   });
 });

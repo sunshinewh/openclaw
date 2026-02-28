@@ -1007,6 +1007,7 @@ export function attachGatewayWsMessageHandler(params: {
             maxBufferedBytes: MAX_BUFFERED_BYTES,
             tickIntervalMs: TICK_INTERVAL_MS,
           },
+          serverTimestampMs: Date.now(),
         };
 
         clearHandshakeTimer();

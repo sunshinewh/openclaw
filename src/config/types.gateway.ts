@@ -142,6 +142,8 @@ export type GatewayAuthConfig = {
   allowTailscale?: boolean;
   /** Base64-encoded HMAC-SHA256 key for CandyClaw secure channel verification. */
   candyclawHmacKey?: string;
+  /** HMAC timestamp tolerance window in milliseconds (default: 30000). */
+  candyclawTimestampWindowMs?: number;
   /** Rate-limit configuration for failed authentication attempts. */
   rateLimit?: GatewayAuthRateLimitConfig;
   /**
