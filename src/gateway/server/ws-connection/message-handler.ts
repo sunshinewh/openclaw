@@ -27,6 +27,7 @@ import { resolveRuntimeServiceVersion } from "../../../version.js";
 import type { AuthRateLimiter } from "../../auth-rate-limit.js";
 import type { GatewayAuthResult, ResolvedGatewayAuth } from "../../auth.js";
 import { isLocalDirectRequest } from "../../auth.js";
+import { globalKeyRotation, verifyCandyclawHmacMultiKey } from "../../candyclaw-hmac.js";
 import {
   buildCanvasScopedHostUrl,
   CANVAS_CAPABILITY_TTL_MS,
@@ -1011,6 +1012,40 @@ export function attachGatewayWsMessageHandler(params: {
         };
 
         clearHandshakeTimer();
+
+        // CandyClaw HMAC connection-level verification.
+        // If the connect params include HMAC fields and a key is configured,
+        // verify the signature over the server challenge nonce.
+        // Failure does NOT reject — it just leaves candyclawSecure false.
+        let candyclawSecure = false;
+        const hmacKeyBase64 = configSnapshot.gateway?.auth?.candyclawHmacKey;
+        const candyclawTs = (connectParams as Record<string, unknown>).candyclawTs as
+          | number
+          | undefined;
+        const candyclawNonce = (connectParams as Record<string, unknown>).candyclawNonce as
+          | string
+          | undefined;
+        const candyclawSig = (connectParams as Record<string, unknown>).candyclawSig as
+          | string
+          | undefined;
+        if (hmacKeyBase64 && candyclawTs != null && candyclawSig) {
+          const keys = globalKeyRotation.getActiveKeys(hmacKeyBase64);
+          const hmacResult = verifyCandyclawHmacMultiKey(
+            {
+              timestamp: candyclawTs,
+              nonce: candyclawNonce,
+              signature: candyclawSig,
+              messageBody: connectNonce,
+            },
+            keys,
+          );
+          if (hmacResult.ok) {
+            candyclawSecure = true;
+          } else {
+            logGateway.warn(`CandyClaw HMAC handshake verification failed: ${hmacResult.reason}`);
+          }
+        }
+
         const nextClient: GatewayWsClient = {
           socket,
           connect: connectParams,
@@ -1020,6 +1055,7 @@ export function attachGatewayWsMessageHandler(params: {
           canvasHostUrl,
           canvasCapability,
           canvasCapabilityExpiresAtMs,
+          candyclawSecure: candyclawSecure || undefined,
         };
         setClient(nextClient);
         setHandshakeState("connected");
