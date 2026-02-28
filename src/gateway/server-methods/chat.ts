@@ -697,6 +697,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       idempotencyKey: string;
       candyclawSecure?: boolean;
       candyclawTs?: number;
+      candyclawNonce?: string;
       candyclawSig?: string;
     };
 
@@ -747,6 +748,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     if (hmacKeyBase64 && p.candyclawSecure) {
       const hmacResult = verifyCandyclawHmac({
         timestamp: p.candyclawTs,
+        nonce: p.candyclawNonce,
         signature: p.candyclawSig,
         messageBody: p.message,
         sharedKeyBase64: hmacKeyBase64,
