@@ -15,6 +15,7 @@ import {
   stripInlineDirectiveTagsFromMessageForDisplay,
 } from "../../utils/directive-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
+import { verifyCandyclawHmac } from "../candyclaw-hmac.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -694,7 +695,11 @@ export const chatHandlers: GatewayRequestHandlers = {
       }>;
       timeoutMs?: number;
       idempotencyKey: string;
+      candyclawSecure?: boolean;
+      candyclawTs?: number;
+      candyclawSig?: string;
     };
+
     const sanitizedMessageResult = sanitizeChatSendMessageInput(p.message);
     if (!sanitizedMessageResult.ok) {
       respond(
@@ -733,6 +738,26 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+
+    // CandyClaw HMAC verification (per-message trust signal).
+    // Verification failure does NOT reject the message — it just means
+    // candyclawSecure stays false in agent context.
+    let candyclawSecure = false;
+    const hmacKeyBase64 = cfg.gateway?.auth?.candyclawHmacKey;
+    if (hmacKeyBase64 && p.candyclawSecure) {
+      const hmacResult = verifyCandyclawHmac({
+        timestamp: p.candyclawTs,
+        signature: p.candyclawSig,
+        messageBody: p.message,
+        sharedKeyBase64: hmacKeyBase64,
+      });
+      if (hmacResult.ok) {
+        candyclawSecure = true;
+      } else {
+        context.logGateway.warn(`CandyClaw HMAC verification failed: ${hmacResult.reason}`);
+      }
+    }
+
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -828,6 +853,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         SenderName: clientInfo?.displayName,
         SenderUsername: clientInfo?.displayName,
         GatewayClientScopes: client?.connect?.scopes,
+        CandyclawSecure: candyclawSecure || undefined,
       };
 
       const agentId = resolveSessionAgentId({

@@ -57,7 +57,7 @@ export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
     // Otherwise leave channelValue undefined (no channel label)
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     schema: "openclaw.inbound_meta.v1",
     chat_id: safeTrim(ctx.OriginatingTo),
     channel: channelValue,
@@ -65,6 +65,10 @@ export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
     surface: safeTrim(ctx.Surface),
     chat_type: chatType ?? (isDirect ? "direct" : undefined),
   };
+  // Only include candyclaw_secure when true (standard omit-when-false pattern).
+  if (ctx.CandyclawSecure) {
+    payload.candyclaw_secure = true;
+  }
 
   // Keep the instructions local to the payload so the meaning survives prompt overrides.
   return [

@@ -140,6 +140,8 @@ export type GatewayAuthConfig = {
   password?: string;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
+  /** Base64-encoded HMAC-SHA256 key for CandyClaw secure channel verification. */
+  candyclawHmacKey?: string;
   /** Rate-limit configuration for failed authentication attempts. */
   rateLimit?: GatewayAuthRateLimitConfig;
   /**

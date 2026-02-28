@@ -128,6 +128,8 @@ export type MsgContext = {
   CommandTargetSessionKey?: string;
   /** Gateway client scopes when the message originates from the gateway. */
   GatewayClientScopes?: string[];
+  /** True when the message was verified via CandyClaw HMAC secure channel. */
+  CandyclawSecure?: boolean;
   /** Thread identifier (Telegram topic id or Matrix thread event id). */
   MessageThreadId?: string | number;
   /** Telegram forum supergroup marker. */
