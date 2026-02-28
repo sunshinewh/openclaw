@@ -471,6 +471,73 @@ describe("HmacKeyRotation", () => {
   });
 });
 
+describe("connection-level HMAC (server nonce as body)", () => {
+  it("accepts signature where message body is a server challenge nonce", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const serverNonce = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    const clientNonce = "client-nonce-abc";
+    const sig = signWithNonce(now, clientNonce, serverNonce);
+
+    const result = verifyCandyclawHmac(
+      {
+        timestamp: now,
+        nonce: clientNonce,
+        signature: sig,
+        messageBody: serverNonce,
+        sharedKeyBase64: TEST_KEY_BASE64,
+      },
+      tracker,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.reason).toBe("ok");
+  });
+
+  it("rejects tampered server nonce", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const serverNonce = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    const clientNonce = "client-nonce-def";
+    const sig = signWithNonce(now, clientNonce, serverNonce);
+
+    const result = verifyCandyclawHmac(
+      {
+        timestamp: now,
+        nonce: clientNonce,
+        signature: sig,
+        messageBody: "tampered-nonce-value",
+        sharedKeyBase64: TEST_KEY_BASE64,
+      },
+      tracker,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("signature_mismatch");
+  });
+
+  it("works with multi-key verification and server nonce body", () => {
+    const tracker = new NonceTracker();
+    const now = Date.now();
+    const serverNonce = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+    const clientNonce = "multi-key-nonce";
+    const sig = signWithNonce(now, clientNonce, serverNonce, TEST_KEY_2_BASE64);
+
+    const result = verifyCandyclawHmacMultiKey(
+      {
+        timestamp: now,
+        nonce: clientNonce,
+        signature: sig,
+        messageBody: serverNonce,
+      },
+      [TEST_KEY_BASE64, TEST_KEY_2_BASE64],
+      tracker,
+    );
+
+    expect(result.ok).toBe(true);
+  });
+});
+
 describe("verifyCandyclawHmacMultiKey", () => {
   it("accepts signature signed with first key", () => {
     const tracker = new NonceTracker();
