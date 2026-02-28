@@ -21,6 +21,7 @@ export type GatewayClient = {
   canvasHostUrl?: string;
   canvasCapability?: string;
   canvasCapabilityExpiresAtMs?: number;
+  candyclawSecure?: boolean;
 };
 
 export type RespondFn = (

@@ -64,6 +64,9 @@ export const ConnectParamsSchema = Type.Object(
     ),
     locale: Type.Optional(Type.String()),
     userAgent: Type.Optional(Type.String()),
+    candyclawTs: Type.Optional(Type.Integer({ minimum: 0 })),
+    candyclawNonce: Type.Optional(Type.String()),
+    candyclawSig: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

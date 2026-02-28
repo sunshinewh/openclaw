@@ -10,4 +10,5 @@ export type GatewayWsClient = {
   canvasHostUrl?: string;
   canvasCapability?: string;
   canvasCapabilityExpiresAtMs?: number;
+  candyclawSecure?: boolean;
 };
