@@ -40,11 +40,6 @@ export const ChatSendParamsSchema = Type.Object(
     attachments: Type.Optional(Type.Array(Type.Unknown())),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     idempotencyKey: NonEmptyString,
-    // CandyClaw secure channel HMAC fields (optional).
-    candyclawSecure: Type.Optional(Type.Boolean()),
-    candyclawTs: Type.Optional(Type.Integer({ minimum: 0 })),
-    candyclawNonce: Type.Optional(Type.String()),
-    candyclawSig: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

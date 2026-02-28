@@ -15,7 +15,7 @@ import {
   stripInlineDirectiveTagsFromMessageForDisplay,
 } from "../../utils/directive-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { globalKeyRotation, verifyCandyclawHmacMultiKey } from "../candyclaw-hmac.js";
+import { globalKeyRotation } from "../candyclaw-hmac.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -696,10 +696,6 @@ export const chatHandlers: GatewayRequestHandlers = {
       }>;
       timeoutMs?: number;
       idempotencyKey: string;
-      candyclawSecure?: boolean;
-      candyclawTs?: number;
-      candyclawNonce?: string;
-      candyclawSig?: string;
     };
 
     const sanitizedMessageResult = sanitizeChatSendMessageInput(p.message);
@@ -741,31 +737,8 @@ export const chatHandlers: GatewayRequestHandlers = {
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
 
-    // CandyClaw HMAC verification (per-message trust signal).
-    // Verification failure does NOT reject the message — it just means
-    // candyclawSecure stays false in agent context.
-    let candyclawSecure = false;
-    const hmacKeyBase64 = cfg.gateway?.auth?.candyclawHmacKey;
-    const timestampWindowMs = cfg.gateway?.auth?.candyclawTimestampWindowMs;
-    if (hmacKeyBase64 && p.candyclawSecure) {
-      const keys = globalKeyRotation.getActiveKeys(hmacKeyBase64);
-      const hmacResult = verifyCandyclawHmacMultiKey(
-        {
-          timestamp: p.candyclawTs,
-          nonce: p.candyclawNonce,
-          signature: p.candyclawSig,
-          messageBody: p.message,
-        },
-        keys,
-        undefined,
-        timestampWindowMs,
-      );
-      if (hmacResult.ok) {
-        candyclawSecure = true;
-      } else {
-        context.logGateway.warn(`CandyClaw HMAC verification failed: ${hmacResult.reason}`);
-      }
-    }
+    // CandyClaw trust flag — set during connection handshake HMAC verification.
+    const candyclawSecure = client?.candyclawSecure ?? false;
 
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
